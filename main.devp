@@ -1,0 +1,283 @@
+
+import json;
+import time;
+import iofile as io;
+import sys;
+var {*} => import std;
+
+class BoxChars {
+    stc TOP: String => "─";
+    stc LEFT: String => "│";
+    stc RIGHT: String => "│";
+    stc BOTTOM: String => "═";
+
+    stc TOP_LEFT: String => "┌";
+    stc TOP_RIGHT: String => "┐";
+    stc BOTTOM_LEFT: String => "╘";
+    stc BOTTOM_RIGHT: String => "╛";
+
+    stc INNER_TOP_LEFT: String => "┘";
+    stc INNER_TOP_RIGHT: String => "└";
+    stc INNER_BOTTOM_LEFT: String => "╕";
+    stc INNER_BOTTOM_RIGHT: String => "╒";
+}
+
+obj Box {
+    top: bool;
+    left: bool;
+    right: bool;
+    bottom: bool;
+    visited: [bool];
+
+    pub x: num;
+    pub y: num;
+
+    ingredients<x #num, y #num> {
+        top => false;
+        left => false;
+        right => false;
+        bottom => false;
+
+        visited => &false;
+
+        attr x => x;
+        attr y => y;
+    }
+
+    mthd visit = Box {
+        if (!visited) {
+            top => false;
+            left => false;
+            right => false;
+            bottom => false;
+        }
+
+        visited => &true;
+        this
+    }
+
+    mthd openDown = Box {
+        bottom => true;
+        this
+    }
+
+    mthd openUp = Box {
+        top => true;
+        this
+    }
+
+    mthd openLeft = Box {
+        left => true;
+        this
+    }
+    
+    mthd openRight = Box {
+        right => true;
+        this
+    }
+
+    mthd bin string = String {
+        let t => ? !top: BoxChars::TOP $_: " ";
+        let l => ? !left: BoxChars::LEFT $_: " ";
+        let r => ? !right: BoxChars::RIGHT $_: " ";
+        let b => ? !bottom: BoxChars::BOTTOM $_: " ";
+
+        let tl => ? (!left & !top): BoxChars::TOP_LEFT
+                  $ (!left &  top): BoxChars::LEFT
+                  $ ( left & !top): BoxChars::TOP
+                  $_: BoxChars::INNER_TOP_LEFT;
+        
+        let tr => ? (!right & !top): BoxChars::TOP_RIGHT
+                  $ (!right &  top): BoxChars::RIGHT
+                  $ ( right & !top): BoxChars::TOP
+                  $_: BoxChars::INNER_TOP_RIGHT;
+
+        let bl => ? (!left & !bottom): BoxChars::BOTTOM_LEFT
+                  $ (!left &  bottom): BoxChars::LEFT
+                  $ ( left & !bottom): BoxChars::BOTTOM
+                  $_: BoxChars::INNER_BOTTOM_LEFT;
+        
+        let br => ? (!right & !bottom): BoxChars::BOTTOM_RIGHT
+                  $ (!right &  bottom): BoxChars::RIGHT
+                  $ ( right & !bottom): BoxChars::BOTTOM
+                  $_: BoxChars::INNER_BOTTOM_RIGHT;
+        
+        tl +  t  * 3 + tr + "\n" +
+        l  + " " * 3 + r  + "\n" +
+        bl +  b  * 3 + br
+    }
+
+    mthd printLine<i #num> = void {
+        print(split(str(this), "\n")[i]);
+    }
+
+    mthd getLine<i #num> = String {
+        split(str(this), "\n")[i]
+    }
+}
+
+let settings => json::loads(io::readFile("config.json"));
+const WIDTH => settings["width"];
+const HEIGHT => settings["height"];
+
+let pointer => Tuple(0, 0);
+let level => scope {
+    let level => Array(
+        ..for (y -> 0:HEIGHT) => Array(
+            ..for (x -> 0:WIDTH) => Box(x, y)
+        )<Box>
+    )<Array(Box)>;
+
+    for (x -> 1:--WIDTH) {
+        (level[0][x])::openDown();
+        (level[0][x])::openLeft();
+        (level[0][x])::openRight();
+
+        (level[-1][x])::openUp();
+        (level[-1][x])::openLeft();
+        (level[-1][x])::openRight();
+
+        for (y -> 1:--HEIGHT) {
+            (level[y][0])::openDown();
+            (level[y][0])::openUp();
+            (level[y][0])::openRight();
+
+            (level[y][-1])::openDown();
+            (level[y][-1])::openUp();
+            (level[y][-1])::openLeft();
+
+            (level[y][x])::openUp();
+            (level[y][x])::openDown();
+            (level[y][x])::openLeft();
+            (level[y][x])::openRight();
+        }
+    }
+
+    level
+};
+
+fn boxes {
+    let u => None;
+    let d => None;
+    let l => None;
+    let r => None;
+
+    if (*pointer[0] < --WIDTH)
+        r => Some(*level[*pointer[1]][*pointer[0] + 1]);
+    if (*pointer[0] > 0)
+        l => Some(*level[*pointer[1]][*pointer[0] - 1]);
+    if (*pointer[1] < --HEIGHT)
+        d => Some(*level[*pointer[1] + 1][*pointer[0]]);
+    if (*pointer[1] > 0)
+        u => Some(*level[*pointer[1] - 1][*pointer[0]]);
+    
+    Tuple(u, d, l, r)
+}
+
+fn allVisited {
+    for (row <- list(level))
+        for (box <- list(row))
+            if (!box::visited)
+                return false;
+    true
+};
+
+fn frame<string #String> = String {
+    let lines => split(string, "\n");
+
+    let s => "+" + "─" * (size(lines[0]) + 2) + "+\n";
+    for (line <- lines)
+        s += "| " + line + " |\n";
+    s + "+" + "─" * (size(lines[0]) + 2) + "+"
+}
+
+fn levelStr {
+    let s => "";
+
+    for (row <- list(level))
+        for (i -> 0:3) {
+            for (box <- list(row))
+                s += box::getLine(i);
+            s += "\n";
+        }
+
+    frame(s)
+};
+
+fn printLevel = void {
+    for (row <- level)
+        for (i -> 0:3) {
+            for (box <- row)
+                box::printLine(i);
+            println();
+        }
+}
+
+fn surrounded {
+    let tup => boxes();
+
+    for (box <- list(tup)) if (match (*box) {
+        Some(val) -> !*val::visited;
+        None -> false;
+    }) return false;
+
+    true
+};
+
+let stack => Array(pointer)<([num] [num])>;
+
+loop {
+    println(levelStr());
+    while (surrounded() & size(stack) > 0) {
+        stack => stack::slice(0, stack::size() - 1);
+        if (size(stack) > 0)
+            pointer => *stack[-1];
+    }
+    
+    if (allVisited()) break;
+
+    let bxs => boxes();
+    let current => (level[*pointer[1]][*pointer[0]])::visit();
+    
+    let possibilites => Array()<num>;
+    for (x -> 0:4) if (match (*bxs[x]) {
+            Some(val) -> !val::visited;
+            None -> false;
+        }) possibilites::add(x);
+    let nxt => choose(list(possibilites));
+
+    let nxtBxt => (bxs[*nxt])::val;
+    nxtBxt::visit();
+    switch (nxt) {
+        case 0:
+            current::openUp();
+            nxtBxt::openDown();
+            break;
+        case 1:
+            current::openDown();
+            nxtBxt::openUp();
+            break;
+        case 2:
+            current::openLeft();
+            nxtBxt::openRight();
+            break;
+        case 3:
+            current::openRight();
+            nxtBxt::openLeft();
+            break;
+    }
+    pointer => Tuple(nxtBxt::x, nxtBxt::y);
+    stack::add(pointer);
+    time::halt(1000 / (WIDTH * HEIGHT));
+}
+
+(level[0][0])::openLeft();
+(level[-1][-1])::openRight();
+
+println("\n" * 100);
+println(levelStr());
+
+let st => " Made with JPizza ";
+let sz => round(5WIDTH / 2) - st / 2 + 2;
+println("─" * sz + st + "─" * sz);
+
