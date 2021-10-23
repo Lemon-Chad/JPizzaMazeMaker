@@ -28,6 +28,7 @@ obj Box {
     right: bool;
     bottom: bool;
     visited: [bool];
+    marked: [bool];
 
     pub x: num;
     pub y: num;
@@ -39,6 +40,7 @@ obj Box {
         bottom => false;
 
         visited => &false;
+        marked => &false;
 
         attr x => x;
         attr y => y;
@@ -101,9 +103,12 @@ obj Box {
                   $ (!right &  bottom): BoxChars::RIGHT
                   $ ( right & !bottom): BoxChars::BOTTOM
                   $_: BoxChars::INNER_BOTTOM_RIGHT;
+
+        let m => ? marked: " X "
+                 $_:       "   ";
         
         tl +  t  * 3 + tr + "\n" +
-        l  + " " * 3 + r  + "\n" +
+        l  +  m      + r  + "\n" +
         bl +  b  * 3 + br
     }
 
@@ -156,7 +161,10 @@ let level => scope {
     level
 };
 
-fn boxes {
+fn boxes<ptr=null> {
+    if (ptr == null)
+        ptr => pointer;
+    
     let u => None;
     let d => None;
     let l => None;
@@ -187,7 +195,7 @@ fn frame<string #String> = String {
 
     let s => "+" + "─" * (size(lines[0]) + 2) + "+\n";
     for (line <- lines)
-        s += "| " + line + " |\n";
+        s += "│ " + line + " │\n";
     s + "+" + "─" * (size(lines[0]) + 2) + "+"
 }
 
@@ -226,8 +234,12 @@ fn surrounded {
 
 let stack => Array(pointer)<([num] [num])>;
 
+let animated => settings["animate_creation"];
+
 loop {
-    println(levelStr());
+    if (animated) 
+        println(levelStr());
+
     while (surrounded() & size(stack) > 0) {
         stack => stack::slice(0, stack::size() - 1);
         if (size(stack) > 0)
@@ -268,11 +280,21 @@ loop {
     }
     pointer => Tuple(nxtBxt::x, nxtBxt::y);
     stack::add(pointer);
-    time::halt(1000 / (WIDTH * HEIGHT));
+
+    if (animated)
+        time::halt(1000 / (WIDTH * HEIGHT));
 }
 
 (level[0][0])::openLeft();
-(level[-1][-1])::openRight();
+
+let seed => randint(0, 2);
+var end;
+if (seed == 0)
+    end => (level[randint(1, --HEIGHT)][0])::openLeft();
+elif (seed == 1)
+    end => (level[randint(0, --HEIGHT)][-1])::openRight();
+else
+    end => (level[-1][randint(1, --WIDTH)])::openDown();
 
 println("\n" * 100);
 println(levelStr());
@@ -281,3 +303,95 @@ let st => " Made with JPizza ";
 let sz => round(5WIDTH / 2) - st / 2 + 2;
 println("─" * sz + st + "─" * sz);
 
+if (!settings["solve"])
+    sys::exit(0);
+println("Solving!");
+
+for (row <- list(level)) for (box <- list(row)) box::visited => false;
+
+obj Node {
+    pub x: num;
+    pub y: num;
+    pub parent: Option;
+
+    ingredients<x #num, y #num> {
+        parent => None;
+
+        attr x => x;
+        attr y => y;
+    }
+
+    mthd setParent<p #Node> {
+        parent => Some(p);
+    }
+
+    mthd bin eq<o #Node> {
+        x == o::x & y == o::y
+    }
+
+    mthd bin string = String -> `(${x}, ${y})` + match (parent) { 
+        Some(val) -> " -> " + val; 
+        None -> "";
+    };
+}
+
+end => Node(end::x, end::y);
+
+let ptrs => Array(Node(0, 0))<Node>;
+var winner;
+while (!ptrs::contains(end)) {
+    let next => Array()<Node>;
+    for (i -> 0:ptrs::size()) {
+        let ptr => *ptrs[i];
+        let current => *level[ptr::y][ptr::x];
+
+        let OFFSETMAP => {
+            "top": [0, -1],
+            "bottom": [0, 1],
+            "left": [-1, 0],
+            "right": [1, 0]
+        };
+
+        for (key <- list(OFFSETMAP)) {
+            if (!getattr(current, key)) continue;
+            let offset => OFFSETMAP[key];
+            let nx => ptr::x + offset[0];
+            let ny => ptr::y + offset[1];
+
+            if (nx < 0 | nx >= WIDTH | ny < 0 | ny >= HEIGHT) continue;
+
+            let box => *level[ny][nx];
+            if (!box::visited) {
+                box::visited => true;
+                let nxt => Node(nx, ny);
+                nxt::setParent(ptr);
+                next::add(nxt);
+                
+                if (nxt == end)
+                    winner => ptr;
+            }
+        }
+    }
+    ptrs => next;
+}
+
+animated => settings["animate_solving"];
+(level[end::y][end::x])::marked => true;
+loop {
+    if (animated) {
+        println(levelStr());
+        time::halt(100);
+    }
+    (level[winner::y][winner::x])::marked => true;
+
+    let brk => false;
+    winner => match (winner::parent) {
+        Some(val) -> val;
+        None -> brk => true;
+    };
+    if (brk) break;
+}
+
+println("\n" * 100);
+println(levelStr());
+println("─" * sz + st + "─" * sz);

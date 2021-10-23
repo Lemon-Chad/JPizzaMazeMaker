@@ -1,4 +1,7 @@
 {
-    "width": 24,
-    "height": 24
+    "width": 32,
+    "height": 32,
+    "solve": true,
+    "animate_creation": false,
+    "animate_solving": true
 }
